@@ -1,4 +1,18 @@
+name: solar system workflow
+
+on:
+  workflow_dispatch:
+  push:
+    branches: 
+      - feature-brancheA
+      - main
+env: 
+   MONGO_URI: "mongodb+srv://supercluster.d83jj.mongodb.net/superData"
+   MONGO_USERNAME: ${{ secrets.MONGO_USERNAME }}
+   MONGO_PASSWORD: ${{secrets.MONGO_PASSWORD }}
+
 jobs:
+
   docker:
     runs-on: ubuntu-latest
     steps:
