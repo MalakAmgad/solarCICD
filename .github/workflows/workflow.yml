@@ -6,6 +6,11 @@ on:
     branches: 
       - feature-brancheA
       - main
+env: 
+   MONGO_URI:""mongodb+srv://supercluster.d83jj.mongodb.net/superData"
+   MONGO_USERNAME: ${{secrets.MONGO_USERNAME }}
+   MONGO_PASSWORD: ${{secrets.MONGO_PASSWORD }}
+
 
 jobs:
   unit-testing:
@@ -33,3 +38,11 @@ jobs:
 
       - name: Unit testing
         run: npm test
+        id: unit-testing-step  
+      
+      - name: Archive test result
+        if: steps.unit-testing-step.outcome == 'failure' || steps.unit-testing-step.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: SP-Test-Results
+          path: test-results.xml
