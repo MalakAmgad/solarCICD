@@ -106,8 +106,9 @@ jobs:
           with:
             push: true
             tags: |
-              ${{ secrets.DOCKER_HUB_USERNAME }}/solar-system:${{ github.sha }}
-              ${{ secrets.DOCKER_HUB_USERNAME }}/solar-system:latest
+              docker.io/${{ secrets.DOCKER_HUB_USERNAME }}/solar-system:${{ github.sha }}
+              docker.io/${{ secrets.DOCKER_HUB_USERNAME }}/solar-system:latest
+
               ghcr.io/${{ steps.repo.outputs.owner }}/solar-system:${{ github.sha }}
     
     
@@ -125,3 +126,58 @@ jobs:
     
             echo Testing Image URL using wget
             wget -q -O - 127.0.0.1:3000/live | grep live
+
+  terraform:
+    name: Terraform Deployment
+    needs: docker
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout config files
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4.3.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+
+      - name: HashiCorp - Setup Terraform
+        uses: hashicorp/setup-terraform@v1.1.2
+        with:
+          terraform_version: "1.1.7"
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./terraform
+
+      - name: Terraform Plan
+        run: terraform plan
+        working-directory: ./terraform
+        
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+
+  deploy:
+    needs: terraform
+    name: Deploy to ECS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout config files
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4.3.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+
+      - name: Update kubeconfig
+        run: |
+          aws eks --region us-west-2 update-kubeconfig --name stage-eks-cluster
+
+      - name: Trigger app deployment
+        uses: stakater/kubectl@v1
