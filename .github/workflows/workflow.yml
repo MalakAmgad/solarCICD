@@ -89,7 +89,7 @@ jobs:
                 with:
                   username: ${{ secrets.DOCKER_HUB_USERNAME }}
                   password: ${{ secrets.DOCKER_HUB_TOKEN }}
-  
+
               - name: build and push
                 uses:  docker/build-push-action@v6
                 with:
@@ -118,5 +118,5 @@ jobs:
                 with:
                   push: true
                   tags: |
-                   ${{ vars.DOCKER_HUB_USERNAME }}/solar-system:${{ github.sha }}
-                  #  ghcr.io/${{ github.repository_owner }}/solar-system:${{ github.sha }}
+                   ${{ secrets.DOCKER_HUB_USERNAME }}/solar-system:${{ github.sha }}
+                   ghcr.io/${{ github.repository_owner }}/solar-system:${{ github.sha }}
