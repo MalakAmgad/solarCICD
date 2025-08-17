@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: 
-      - feature-branchA
+      - feature-brancheA
       - main
 
 jobs:
