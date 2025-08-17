@@ -74,49 +74,21 @@ jobs:
             retention-days: 5
   
   docker:
-          name: containerization
-          needs: code-coverage
-          permissions:
-              contents: read
-              packages: write
-          runs-on: ubuntu-latest
-          steps:
-              - name: checkout
-                uses: actions/checkout@v5
-  
-              - name: docker_login
-                uses: docker/login-action@v3.5.0
-                with:
-                  username: ${{ secrets.DOCKER_HUB_USERNAME }}
-                  password: ${{ secrets.DOCKER_HUB_TOKEN }}
-
-              - name: build and push
-                uses:  docker/build-push-action@v6
-                with:
-                  push: false
-                  tags: ${{ secrets.DOCKER_HUB_USERNAME }}/solar-system:${{ github.sha }}
-  
-  
-              - name: test docker image
-                run: |
-                  docker images
-                  docker run --name solar-system-app -d \
-                  -p 3000:3000 \
-                  -e MONGO_URI=$MONGO_URI \
-                  -e MONGO_USERNAME=$MONGO_USERNAME \
-                  -e MONGO_PASSWORD=$MONGO_PASSWORD \
-                  ${{ secrets.DOCKER_HUB_USERNAME }}/solar-system:${{ github.sha }}
-                  export IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' solar-system-app)
-                  echo $IP
-  
-                  echo Testing Image URL using wget
-                  wget -q -O - 127.0.0.1:3000/live | grep live
-  
-  
-              - name: push docker image
-                uses:  docker/build-push-action@v6
-                with:
-                  push: true
-                  tags: |
-                   ${{ secrets.DOCKER_HUB_USERNAME }}/solar-system:${{ github.sha }}
-                   ghcr.io/${{ github.repository_owner }}/solar-system:${{ github.sha }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+      
+      - name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_HUB_USERNAME }}/solar-system:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/solar-system:${{ github.sha }}
