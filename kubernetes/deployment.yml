@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+ name: microservice
+spec:
+  replicas: 3
+  selector:
+   matchLabels:
+    app: microservice
+  template:
+   metadata:
+    labels:
+     app: microservice
+   spec:
+    containers:
+    - name: microservice
+      image: 20150748/solar-system:latest
+      ports:
+      - containerPort: 3000
