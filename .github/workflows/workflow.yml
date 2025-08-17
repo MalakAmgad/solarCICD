@@ -95,19 +95,31 @@ jobs:
             username: ${{ github.actor }}
             password: ${{ secrets.GITHUB_TOKEN }}
 
-        - name: Build Docker file
-          uses: docker/build-push-action@v6
-          with:       
-            push: false
+        - name: Build and push Docker image
+          uses: docker/build-push-action@v4
+          with:
+            push: true
             tags: |
-              docker images
-              docker run --name solar-system-app -d \
+              ${{ vars.DOCKER_HUB_USERNAME }}/solar-system:${{ github.sha }}
+              ghcr.io/${{ github.repository_owner }}/solar-system:${{ github.sha }}
+            secrets: |
+              GIT_AUTH_TOKEN=${{ secrets.GIT_AUTH_TOKEN }}
+        
+        - name: Run container and test
+          run: |
+            docker run -d \
+              --name solar-system-app \
               -p 3000:3000 \
-              -e MONGO_URI-$MONGO_URI \
-              -e MONGO_USERNAME=$MONGO_USERNAME \
-              -e MONGO_PASSWORD=$MONGO_PASSWORD \
-              ${{vars.DOCKER_HUB_USERNAME}}/solar-system:{{github.sha}}
-              export IP=$(docker inspect --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' solar-system-app)
-              
-              echo "Testing container URL using wget..."
-              wget -q -O - http://$IP:3000/live | grep "Live"
+              -e MONGO_URI=${{ secrets.MONGO_URI }} \
+              -e MONGO_USERNAME=${{ secrets.MONGO_USERNAME }} \
+              -e MONGO_PASSWORD=${{ secrets.MONGO_PASSWORD }} \
+              ${{ vars.DOCKER_HUB_USERNAME }}/solar-system:${{ github.sha }}
+            
+            IP=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' solar-system-app)
+            echo "Container IP: $IP"
+            
+            echo "Testing container..."
+            until wget -q -O - http://$IP:3000/live | grep -q "Live"; do
+              sleep 5
+              echo "Waiting for container to start..."
+            done
