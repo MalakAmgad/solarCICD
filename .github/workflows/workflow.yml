@@ -144,7 +144,7 @@ jobs:
           aws-region: us-east-2
 
       - name: HashiCorp - Setup Terraform
-        uses: hashicorp/setup-terraform@v1.1.2
+        uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.1.7"
 
@@ -158,6 +158,7 @@ jobs:
         
       - name: Terraform Apply
         run: terraform apply -auto-approve
+        working-directory: ./terraform
 
   deploy:
     needs: terraform
