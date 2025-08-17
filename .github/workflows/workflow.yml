@@ -94,3 +94,20 @@ jobs:
             registry: ghcr.io
             username: ${{ github.actor }}
             password: ${{ secrets.GITHUB_TOKEN }}
+
+        - name: Build Docker file
+          uses: docker/build-push-action@v6
+          with:       
+            push: false
+            tags: |
+              docker images
+              docker run --name solar-system-app -d \
+              -p 3000:3000 \
+              -e MONGO_URI-$MONGO_URI \
+              -e MONGO_USERNAME=$MONGO_USERNAME \
+              -e MONGO_PASSWORD=$MONGO_PASSWORD \
+              ${{vars.DOCKER_HUB_USERNAME}}/solar-system:{{github.sha}}
+              export IP=$(docker inspect --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' solar-system-app)
+              
+              echo "Testing container URL using wget..."
+              wget -q -O - http://$IP:3000/live | grep "Live"
