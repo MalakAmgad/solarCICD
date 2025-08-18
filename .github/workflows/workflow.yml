@@ -196,4 +196,10 @@ jobs:
         run: |
           kubectl get pods  
           kubectl get svc
+      - name: Get LoadBalancer URL
+        run: |
+          echo "Waiting for LoadBalancer to be provisioned..."
+          kubectl wait --for=condition=available deployment/microservice-deployment --timeout=120s || true
+          kubectl get svc microservice-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+      
 
