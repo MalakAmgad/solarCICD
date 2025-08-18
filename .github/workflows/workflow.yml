@@ -192,3 +192,8 @@ jobs:
          kubectl apply -f deployment.yml
          kubectl apply -f service.yml
         working-directory: ./kubernetes
+      - name: Verify Deployment
+        run: |
+          kubectl get pods  
+          kubectl get svc
+
