@@ -1,0 +1,52 @@
+name: soalr system workflow
+on:
+    workflow_dispatch:
+    push:
+       branches:
+            - feature-brancheA
+            - main
+
+jobs:
+    deploy:
+        name: deploy to EKS
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: checkout config files
+              uses: actions/checkout@v5
+
+
+            - name: Configure AWS Credentials
+              uses: aws-actions/configure-aws-credentials@v4.3.1
+              with:
+                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                  aws-region: us-west-2
+
+            - name: updat kubeconfig
+              run: | 
+                    aws eks --region us-west-2 update-kubeconfig --name stage-eks-cluster
+
+            - name: Trigger app deployment
+              uses: statsig-io/kubectl-via-eksctl@main
+              env:
+                 aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                 aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                 region: us-west-2
+                 cluster: stage-eks-cluster
+
+
+            - name: Deploy k8s deployments
+              run: |
+               kubectl apply -f deployment.yml
+               kubectl apply -f service.yml
+              working-directory: ./kubernetes
+
+            - name: Verify Deployment
+              run: |
+                kubectl get pods  
+                kubectl get svc
+
+            
+
+
