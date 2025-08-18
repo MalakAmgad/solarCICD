@@ -46,5 +46,5 @@ variable "node_min_capacity" {
 variable "public_key_path" {
   description = "Path to your public SSH key"
   type        = string
-  default     = "solar.ppk" # Relative path to the key file
+  default     = "solar.pub" # Relative path to the key file
 }
