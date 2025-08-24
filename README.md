@@ -1,7 +1,3 @@
-Perfect 🙌 Adding a **README.md** will make your project much clearer for anyone who looks at it (including future you).
-Since your workflow is a **CI/CD pipeline with testing, Docker, Terraform, and EKS deployment**, here’s a starter README you can adapt:
-
----
 
 # 🌌 Solar System Project
 
@@ -126,6 +122,3 @@ http://<loadbalancer-dns>:80
 5. Kubernetes deploys app + service.
 6. Get **public LoadBalancer URL** and open the project in your browser.
 
----
-
-👉 Do you want me to create the actual **README.md file** for you with this content, so you can drop it into your repo directly?
