@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: 
-      - feature-brancheB
+      - feature-brancheA
       - main
 env: 
    MONGO_URI: "mongodb+srv://supercluster.d83jj.mongodb.net/superData"
