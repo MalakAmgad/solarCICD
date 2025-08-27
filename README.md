@@ -15,7 +15,7 @@ The GitHub Actions workflow (`solar system workflow`) runs automatically on:
 1. **Unit Testing**
 
    * Runs tests on Node.js versions `18, 19, 20` across Ubuntu, macOS, and Windows.
-   * Archives test results as artifacts.
+   * Archives test results as artifacts .
 
 2. **Code Coverage**
 
