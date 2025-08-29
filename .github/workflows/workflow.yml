@@ -205,7 +205,7 @@ jobs:
           kubectl get svc microservice-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
   deploy-monitoring:
         needs: deploy
-        name: deploy to EKS
+        name: deploy to EKS Monitor
         runs-on: ubuntu-latest
         env: 
           AWS_REGION: us-west-2
@@ -246,7 +246,7 @@ jobs:
                 helm repo update
             - name: Render values with env
               run: |
-               envsubst < values.yml > /tmp/values.rendered.yaml
+               envsubst < ./kubernetes/values.yml > /tmp/values.rendered.yaml
                echo "Rendered values:"
                tail -n +1 /tmp/values.rendered.yaml
               working-directory: ./kubernetes
