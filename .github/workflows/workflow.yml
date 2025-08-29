@@ -246,7 +246,7 @@ jobs:
                 helm repo update
             - name: Render values with env
               run: |
-               envsubst < ./kubernetes/values.yml > /tmp/values.rendered.yaml
+               envsubst < values.yml > /tmp/values.rendered.yaml
                echo "Rendered values:"
                tail -n +1 /tmp/values.rendered.yaml
               working-directory: ./kubernetes
