@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+ name: microservice
+ namespace: monitoring
+ labels:
+  release: kube-prometheus-stack
+spec:
+ selector:
+  matchLabels:
+   app: microservice
+ namespaceSelector:
+  matchNames: ["default"]
+ endpoints:
+  - port: http
+    path: /metrics
+    interval: 5s
+    scheme: http
