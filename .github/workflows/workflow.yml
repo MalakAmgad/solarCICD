@@ -282,80 +282,101 @@ jobs:
           kubectl get svc microservice-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
           
   deploy-monitoring:
-        needs: deploy
-        name: deploy to EKS
-        runs-on: ubuntu-latest
-        env: 
-          AWS_REGION: us-west-2
-          EKS_CLUSTER_NAME: stage-eks-cluster
-          GRAFANA_ADMIN_PASSWORD: ${{ secrets.grafana_admin_password }}
-
-        steps:
-            - name: checkout config files
-              uses: actions/checkout@v5
-
-
-            - name: Configure AWS Credentials
-              uses: aws-actions/configure-aws-credentials@v4.3.1
-              with:
-                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-                  aws-region: us-west-2
-
-            - name: updat kubeconfig
-              run: | 
-                    aws eks --region us-west-2 update-kubeconfig --name stage-eks-cluster
-
-            - name: Trigger app deployment
-              uses: statsig-io/kubectl-via-eksctl@main
-              env:
-                 aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-                 aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-                 region: us-west-2
-                 cluster: stage-eks-cluster
-
-            - name: create monitoring namespace
-              run: kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-
-            - name: Add Helm repos
-              run: |
-                helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-                helm repo add grafana https://grafana.github.io/helm-charts
-                helm repo update
-            - name: Render values with env
-              run: |
-               envsubst < values.yml > /tmp/values.rendered.yaml
-               echo "Rendered values:"
-               tail -n +1 /tmp/values.rendered.yaml
-              working-directory: ./kubernetes
-
-            - name: Install/Upgrade kube-prometheus-stack
-              run: |
-                helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-                  --namespace monitoring \
-                  --values /tmp/values.rendered.yaml \
-                  --wait --timeout 5m
-            - name: Apply ServiceMonitor for my app
-              run: |
-                kubectl apply -f servicemonitor-splar-system.yaml
-              working-directory: ./kubernetes
-
-            - name: Show external endpoints
-              run: |
-                echo "Waiting for LoadBalancer IPs..."
-                kubectl -n monitoring wait --for=condition=available deploy/kube-prometheus-stack-grafana --timeout=10m
-                kubectl -n monitoring get svc -o wide
-                echo "Grafana URL:"
-                kubectl -n monitoring get svc kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}'
-                echo "Prometheus URL:"
-                kubectl -n monitoring get svc kube-prometheus-stack-prometheus -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}'
-
-                    
-       
+    needs: deploy
+    name: deploy to EKS
+    runs-on: ubuntu-latest
+    env: 
+      AWS_REGION: us-west-2
+      EKS_CLUSTER_NAME: stage-eks-cluster
+      GRAFANA_ADMIN_PASSWORD: ${{ secrets.grafana_admin_password }}
   
+    steps:
+      - name: checkout config files
+        uses: actions/checkout@v5
   
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4.3.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
   
+      - name: updat kubeconfig
+        run: | 
+          aws eks --region us-west-2 update-kubeconfig --name stage-eks-cluster
   
-                            
-              
+      - name: Trigger app deployment
+        uses: statsig-io/kubectl-via-eksctl@main
+        env:
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          region: us-west-2
+          cluster: stage-eks-cluster
   
+      - name: create monitoring namespace
+        run: kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+  
+      - name: Check for pending Helm operations and cleanup if needed
+        run: |
+          # List all Helm releases to check for pending operations
+          helm list -A --pending
+          
+          # If there are pending operations, try to rollback or cleanup
+          if helm list -A --pending | grep -q "kube-prometheus-stack"; then
+            echo "Found pending operation for kube-prometheus-stack, attempting rollback..."
+            helm rollback kube-prometheus-stack -n monitoring || true
+            sleep 10
+          fi
+          
+          # Additional cleanup: delete any failed releases stuck in pending state
+          helm list -A --failed | grep "kube-prometheus-stack" | while read release; do
+            release_name=$(echo $release | awk '{print $1}')
+            namespace=$(echo $release | awk '{print $2}')
+            echo "Deleting failed release: $release_name in namespace $namespace"
+            helm delete $release_name -n $namespace --no-hooks || true
+          done
+  
+      - name: Add Helm repos
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo add grafana https://grafana.github.io/helm-charts
+          helm repo update
+  
+      - name: Render values with env
+        run: |
+          # Install envsubst if not available
+          sudo apt-get update && sudo apt-get install -y gettext-base
+          envsubst < values.yml > /tmp/values.rendered.yaml
+          echo "Rendered values:"
+          cat /tmp/values.rendered.yaml
+        working-directory: ./kubernetes
+  
+      - name: Install/Upgrade kube-prometheus-stack with atomic option
+        run: |
+          helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+            --namespace monitoring \
+            --values /tmp/values.rendered.yaml \
+            --atomic \
+            --cleanup-on-fail \
+            --wait \
+            --timeout 15m
+  
+      - name: Verify Helm release status
+        run: |
+          helm status kube-prometheus-stack -n monitoring
+          helm list -n monitoring
+  
+      - name: Apply ServiceMonitor for my app
+        run: |
+          kubectl apply -f servicemonitor-splar-system.yaml
+        working-directory: ./kubernetes
+  
+      - name: Show external endpoints
+        run: |
+          echo "Waiting for LoadBalancer IPs..."
+          kubectl -n monitoring wait --for=condition=available deploy/kube-prometheus-stack-grafana --timeout=10m
+          kubectl -n monitoring get svc -o wide
+          echo "Grafana URL:"
+          kubectl -n monitoring get svc kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}'
+          echo "Prometheus URL:"
+          kubectl -n monitoring get svc kube-prometheus-stack-prometheus -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}'
