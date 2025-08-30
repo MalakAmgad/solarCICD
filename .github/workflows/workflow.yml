@@ -300,46 +300,43 @@ jobs:
               with:
                   aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
                   aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-                  aws-region: us-west-2
+                  aws-region: ${{ env.AWS_REGION }}
 
             - name: updat kubeconfig
               run: | 
-                    aws eks --region us-west-2 update-kubeconfig --name stage-eks-cluster
+                    aws eks --region $AWS_REGION update-kubeconfig --name stage-eks-cluster
 
-            - name: Trigger app deployment
-              uses: statsig-io/kubectl-via-eksctl@main
-              env:
-                 aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-                 aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-                 region: us-west-2
-                 cluster: stage-eks-cluster
-
-            - name: create monitoring namespace
+            - name: Verify cluster access
+              run: kubectl get nodes
+      
+            - name: Create monitoring namespace
               run: kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-
+      
             - name: Add Helm repos
               run: |
                 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
                 helm repo add grafana https://grafana.github.io/helm-charts
                 helm repo update
+      
             - name: Render values with env
               run: |
-               envsubst < values.yml > /tmp/values.rendered.yaml
-               echo "Rendered values:"
-               tail -n +1 /tmp/values.rendered.yaml
+                envsubst < values.yml > /tmp/values.rendered.yaml
+                echo "Rendered values:"
+                tail -n +1 /tmp/values.rendered.yaml
               working-directory: ./kubernetes
-
+      
             - name: Install/Upgrade kube-prometheus-stack
               run: |
                 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
                   --namespace monitoring \
                   --values /tmp/values.rendered.yaml \
-                  --wait --timeout 15m
+                  --wait \
+                  --timeout 15m
+      
             - name: Apply ServiceMonitor for my app
-              run: |
-                kubectl apply -f servicemonitor-splar-system.yaml
+              run: kubectl apply -f servicemonitor-splar-system.yaml
               working-directory: ./kubernetes
-
+      
             - name: Show external endpoints
               run: |
                 echo "Waiting for LoadBalancer IPs..."
@@ -349,7 +346,7 @@ jobs:
                 kubectl -n monitoring get svc kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}'
                 echo "Prometheus URL:"
                 kubectl -n monitoring get svc kube-prometheus-stack-prometheus -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}'
-
-                    
+                          
+            
       
-
+      
