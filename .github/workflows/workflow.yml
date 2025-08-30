@@ -370,7 +370,7 @@ jobs:
             --namespace $NS \
             --values /tmp/values.rendered.yaml \
             --wait \
-            --timeout 30m \
+            --timeout 5m \
             --debug 2>&1 | tee /tmp/helm-install.log
         continue-on-error: true
   
