@@ -204,75 +204,76 @@ jobs:
           echo "Waiting for LoadBalancer to be provisioned..."
           kubectl wait --for=condition=available deployment/microservice-deployment --timeout=120s || true
           kubectl get svc microservice-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+          
   deploy-monitoring:
-    needs: deploy
-    name: Deploy Monitoring Stack
-    runs-on: ubuntu-latest
-    env: 
-      AWS_REGION: us-west-2
-      EKS_CLUSTER_NAME: stage-eks-cluster
-      GRAFANA_ADMIN_PASSWORD: ${{ secrets.grafana_admin_password }}
+        needs: deploy
+        name: deploy to EKS Monitor
+        runs-on: ubuntu-latest
+        env: 
+          AWS_REGION: us-west-2
+          EKS_CLUSTER_NAME: stage-eks-cluster
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.grafana_admin_password }}
 
-    steps:
-        - name: Checkout config files
-          uses: actions/checkout@v5
+        steps:
+            - name: checkout config files
+              uses: actions/checkout@v5
 
-        - name: Configure AWS Credentials
-          uses: aws-actions/configure-aws-credentials@v4.3.1
-          with:
-              aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-              aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-              aws-region: us-west-2
 
-        - name: Update kubeconfig
-          run: aws eks --region us-west-2 update-kubeconfig --name stage-eks-cluster
+            - name: Configure AWS Credentials
+              uses: aws-actions/configure-aws-credentials@v4.3.1
+              with:
+                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                  aws-region: us-west-2
 
-        - name: Create monitoring namespace
-          run: kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+            - name: updat kubeconfig
+              run: | 
+                    aws eks --region us-west-2 update-kubeconfig --name stage-eks-cluster
 
-        - name: Add Helm repos
-          run: |
-            helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-            helm repo add grafana https://grafana.github.io/helm-charts
-            helm repo update
+            - name: Trigger app deployment
+              uses: statsig-io/kubectl-via-eksctl@main
+              env:
+                 aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                 aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                 region: us-west-2
+                 cluster: stage-eks-cluster
 
-        # ✅ NEW STEP – Install CRDs before helm upgrade
-        - name: Install Prometheus Operator CRDs
-          run: |
-            kubectl apply --server-side -f https://github.com/prometheus-operator/prometheus-operator/raw/main/example/prometheus-operator-crd/monitoring.coreos.com_alertmanagers.yaml
-            kubectl apply --server-side -f https://github.com/prometheus-operator/prometheus-operator/raw/main/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml
-            kubectl apply --server-side -f https://github.com/prometheus-operator/prometheus-operator/raw/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheuses.yaml
-            kubectl apply --server-side -f https://github.com/prometheus-operator/prometheus-operator/raw/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml
-            kubectl apply --server-side -f https://github.com/prometheus-operator/prometheus-operator/raw/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
-            kubectl apply --server-side -f https://github.com/prometheus-operator/prometheus-operator/raw/main/example/prometheus-operator-crd/monitoring.coreos.com_thanosrulers.yaml
+            - name: create monitoring namespace
+              run: kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 
-        - name: Render values with env
-          run: |
-            envsubst < values.yml > /tmp/values.rendered.yaml
-            echo "Rendered values:"
-            tail -n +1 /tmp/values.rendered.yaml
-          working-directory: ./kubernetes
+            - name: Add Helm repos
+              run: |
+                helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+                helm repo add grafana https://grafana.github.io/helm-charts
+                helm repo update
+            - name: Render values with env
+              run: |
+               envsubst < values.yml > /tmp/values.rendered.yaml
+               echo "Rendered values:"
+               tail -n +1 /tmp/values.rendered.yaml
+              working-directory: ./kubernetes
 
-        - name: Install/Upgrade kube-prometheus-stack
-          run: |
-            helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-              --namespace monitoring \
-              --values /tmp/values.rendered.yaml \
-              --timeout 20m --debug
+            - name: Install/Upgrade kube-prometheus-stack
+              run: |
+                helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+                  --namespace monitoring \
+                  --values /tmp/values.rendered.yaml \
+                  --wait --timeout 15m
+            - name: Apply ServiceMonitor for my app
+              run: |
+                kubectl apply -f servicemonitor-splar-system.yaml
+              working-directory: ./kubernetes
 
-        - name: Wait for Grafana & Prometheus rollout
-          run: |
-            kubectl rollout status deployment/kube-prometheus-stack-grafana -n monitoring --timeout=600s
-            kubectl rollout status deployment/kube-prometheus-stack-operator -n monitoring --timeout=600s
+            - name: Show external endpoints
+              run: |
+                echo "Waiting for LoadBalancer IPs..."
+                kubectl -n monitoring wait --for=condition=available deploy/kube-prometheus-stack-grafana --timeout=10m
+                kubectl -n monitoring get svc -o wide
+                echo "Grafana URL:"
+                kubectl -n monitoring get svc kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}'
+                echo "Prometheus URL:"
+                kubectl -n monitoring get svc kube-prometheus-stack-prometheus -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}'
 
-        - name: Apply ServiceMonitor for my app
-          run: kubectl apply -f servicemonitor-splar-system.yaml
-          working-directory: ./kubernetes
+                    
+      
 
-        - name: Show external endpoints
-          run: |
-            kubectl -n monitoring get svc -o wide
-            echo "Grafana URL:"
-            kubectl -n monitoring get svc kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}'
-            echo "Prometheus URL:"
-            kubectl -n monitoring get svc kube-prometheus-stack-prometheus -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}'
