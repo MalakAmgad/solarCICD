@@ -316,15 +316,7 @@ jobs:
 
             - name: create monitoring namespace
               run: kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-            - name: Apply monitoring CRDs
-              run: |
-                kubectl apply --server-side -f https://github.com/prometheus-operator/prometheus-operator/raw/main/example/prometheus-operator-crd/monitoring.coreos.com_alertmanagers.yaml
-                kubectl apply --server-side -f https://github.com/prometheus-operator/prometheus-operator/raw/main/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml
-                kubectl apply --server-side -f https://github.com/prometheus-operator/prometheus-operator/raw/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheuses.yaml
-                kubectl apply --server-side -f https://github.com/prometheus-operator/prometheus-operator/raw/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml
-                kubectl apply --server-side -f https://github.com/prometheus-operator/prometheus-operator/raw/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
-                kubectl apply --server-side -f https://github.com/prometheus-operator/prometheus-operator/raw/main/example/prometheus-operator-crd/monitoring.coreos.com_thanosrulers.yaml
-            
+
             - name: Add Helm repos
               run: |
                 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
@@ -342,7 +334,7 @@ jobs:
                 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
                   --namespace monitoring \
                   --values /tmp/values.rendered.yaml \
-                  --wait --timeout 15m
+                  --wait --timeout 1m
             - name: Apply ServiceMonitor for my app
               run: |
                 kubectl apply -f servicemonitor-splar-system.yaml
