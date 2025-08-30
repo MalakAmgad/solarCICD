@@ -206,7 +206,7 @@ jobs:
             
   terraform:
     name: Terraform Deployment
-    needs: docker
+    needs: [docker, code-coverage, unit-testing, trivy-scan]
     runs-on: ubuntu-latest
     environment: production
     steps:
