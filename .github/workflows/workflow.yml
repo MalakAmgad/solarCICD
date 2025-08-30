@@ -126,7 +126,7 @@ jobs:
     
             echo Testing Image URL using wget
             wget -q -O - 127.0.0.1:3000/live | grep live
-trivy-scan:
+  trivy-scan:
     name: Trivy Security Scan
     needs: docker
     runs-on: ubuntu-latest
