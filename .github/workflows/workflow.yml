@@ -282,127 +282,75 @@ jobs:
           kubectl get svc microservice-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
           
   deploy-monitoring:
-    needs: deploy
-    name: Deploy to EKS Monitor (debug + auto-recover)
-    runs-on: ubuntu-latest
-    env:
-      AWS_REGION: us-west-2
-      EKS_CLUSTER_NAME: stage-eks-cluster
-      GRAFANA_ADMIN_PASSWORD: ${{ secrets.grafana_admin_password }}
-    steps:
-      - name: Checkout config files
-        uses: actions/checkout@v5
-  
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-  
-      - name: Update kubeconfig
-        run: aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER_NAME
-  
-      - name: Quick cluster checks
-        run: |
-          kubectl version --short
-          echo "Can create cluster roles?"
-          kubectl auth can-i create clusterrole || true
-          kubectl get ns --no-headers || true
-  
-      - name: Ensure monitoring namespace
-        run: kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-  
-      - name: Add and update Helm repos
-        run: |
-          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-          helm repo add grafana https://grafana.github.io/helm-charts
-          helm repo update
-  
-      - name: Check existing release and uninstall if broken
-        run: |
-          set -e
-          RELEASE=kube-prometheus-stack
-          NS=monitoring
-          if helm status $RELEASE -n $NS >/dev/null 2>&1; then
-            echo "Found existing release - status:"
-            helm status $RELEASE -n $NS || true
-            echo "History:"
-            helm history $RELEASE -n $NS || true
-            # If release exists but is not deployed cleanly, uninstall to allow fresh install
-            echo "Uninstalling existing release (to recover cleanly)"
-            helm uninstall $RELEASE -n $NS || true
-          else
-            echo "No existing release found"
-          fi
-  
-      - name: Pull chart and apply CRDs (safe)
-        working-directory: ${{ github.workspace }}
-        run: |
-          TMP=/tmp/kube-monitor-chart
-          rm -rf $TMP
-          mkdir -p $TMP
-          helm pull prometheus-community/kube-prometheus-stack --untar --untardir $TMP || true
-          # Chart directory name may be kube-prometheus-stack
-          CHART_DIR=$(find $TMP -maxdepth 1 -type d -name "kube-prometheus-stack*" | head -n1)
-          echo "Chart dir: $CHART_DIR"
-          if [ -d "$CHART_DIR/crds" ]; then
-            echo "Applying CRDs from chart (may be no-op if already present)"
-            kubectl apply -f "$CHART_DIR/crds" || true
-          else
-            echo "No CRDs folder in chart (helm will handle CRDs)."
-          fi
-  
-      - name: Render values with env
-        run: |
-          envsubst < values.yml > /tmp/values.rendered.yaml
-          tail -n +1 /tmp/values.rendered.yaml
-        working-directory: ./kubernetes
-  
-      - name: Install/Upgrade kube-prometheus-stack (with debug)
-        working-directory: ./kubernetes
-        run: |
-          set -o pipefail
-          RELEASE=kube-prometheus-stack
-          NS=monitoring
-          # Run helm with debug; capture output to file for artifact upload
-          helm upgrade --install $RELEASE prometheus-community/kube-prometheus-stack \
-            --namespace $NS \
-            --values /tmp/values.rendered.yaml \
-            --wait \
-            --timeout 5m \
-            --debug 2>&1 | tee /tmp/helm-install.log
-        continue-on-error: true
-  
-      - name: Collect Kubernetes debug info (always)
-        if: always()
-        run: |
-          mkdir -p /tmp/monitoring-debug
-          echo "--- HELM LOG ---" > /tmp/monitoring-debug/README.txt || true
-          cp /tmp/helm-install.log /tmp/monitoring-debug/ || true
-          echo "=== kubectl get ns ===" >> /tmp/monitoring-debug/README.txt
-          kubectl get ns >> /tmp/monitoring-debug/kubectl-ns.txt || true
-          echo "=== CRDs (prometheus/grafana) ===" >> /tmp/monitoring-debug/README.txt
-          kubectl get crds | grep -E 'prometheus|alertmanager|servicemonitor|grafana' || true > /tmp/monitoring-debug/crds.txt || true
-          echo "=== monitoring namespace: pods ===" >> /tmp/monitoring-debug/README.txt
-          kubectl -n monitoring get all -o wide > /tmp/monitoring-debug/monitoring-get-all.txt || true
-          echo "=== monitoring events (last 200) ===" >> /tmp/monitoring-debug/README.txt
-          kubectl -n monitoring get events --sort-by=.metadata.creationTimestamp | tail -n 200 > /tmp/monitoring-debug/events.txt || true
-          echo "=== describe pods and logs (last 200 lines) ===" >> /tmp/monitoring-debug/README.txt
-          for p in $(kubectl -n monitoring get pods -o name 2>/dev/null || true); do
-            echo ">>> $p" >> /tmp/monitoring-debug/pod-describe.txt
-            kubectl -n monitoring describe $p >> /tmp/monitoring-debug/pod-describe.txt 2>&1 || true
-            kubectl -n monitoring logs --all-containers $p --tail=200 >> /tmp/monitoring-debug/pod-logs.txt 2>&1 || true
-          done
-          echo "=== kube-system pods (node/infra errors might show there) ===" >> /tmp/monitoring-debug/README.txt
-          kubectl -n kube-system get pods -o wide > /tmp/monitoring-debug/kube-system-pods.txt || true
-  
-      - name: Upload monitoring debug artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: monitoring-debug
-          path: /tmp/monitoring-debug
+        needs: deploy
+        name: deploy to EKS
+        runs-on: ubuntu-latest
+        env: 
+          AWS_REGION: us-west-2
+          EKS_CLUSTER_NAME: stage-eks-cluster
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.grafana_admin_password }}
+
+        steps:
+            - name: checkout config files
+              uses: actions/checkout@v5
+
+
+            - name: Configure AWS Credentials
+              uses: aws-actions/configure-aws-credentials@v4.3.1
+              with:
+                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                  aws-region: us-west-2
+
+            - name: updat kubeconfig
+              run: | 
+                    aws eks --region us-west-2 update-kubeconfig --name stage-eks-cluster
+
+            - name: Trigger app deployment
+              uses: statsig-io/kubectl-via-eksctl@main
+              env:
+                 aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                 aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                 region: us-west-2
+                 cluster: stage-eks-cluster
+
+            - name: create monitoring namespace
+              run: kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+            - name: Add Helm repos
+              run: |
+                helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+                helm repo add grafana https://grafana.github.io/helm-charts
+                helm repo update
+            - name: Render values with env
+              run: |
+               envsubst < values.yml > /tmp/values.rendered.yaml
+               echo "Rendered values:"
+               tail -n +1 /tmp/values.rendered.yaml
+              working-directory: ./kubernetes
+
+            - name: Install/Upgrade kube-prometheus-stack
+              run: |
+                helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+                  --namespace monitoring \
+                  --values /tmp/values.rendered.yaml \
+                  --wait --timeout 15m
+            - name: Apply ServiceMonitor for my app
+              run: |
+                kubectl apply -f servicemonitor-splar-system.yaml
+              working-directory: ./kubernetes
+
+            - name: Show external endpoints
+              run: |
+                echo "Waiting for LoadBalancer IPs..."
+                kubectl -n monitoring wait --for=condition=available deploy/kube-prometheus-stack-grafana --timeout=10m
+                kubectl -n monitoring get svc -o wide
+                echo "Grafana URL:"
+                kubectl -n monitoring get svc kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}'
+                echo "Prometheus URL:"
+                kubectl -n monitoring get svc kube-prometheus-stack-prometheus -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}'
+
+                    
        
   
   
