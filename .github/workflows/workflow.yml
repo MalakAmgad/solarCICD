@@ -283,150 +283,131 @@ jobs:
           
   deploy-monitoring:
     needs: deploy
-    name: deploy to EKS (monitoring)
+    name: Deploy to EKS Monitor (debug + auto-recover)
     runs-on: ubuntu-latest
     env:
       AWS_REGION: us-west-2
       EKS_CLUSTER_NAME: stage-eks-cluster
       GRAFANA_ADMIN_PASSWORD: ${{ secrets.grafana_admin_password }}
-
     steps:
-      - name: checkout config files
+      - name: Checkout config files
         uses: actions/checkout@v5
-
+  
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4.3.1
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-west-2
-
-      - name: update kubeconfig
+          aws-region: ${{ env.AWS_REGION }}
+  
+      - name: Update kubeconfig
+        run: aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER_NAME
+  
+      - name: Quick cluster checks
         run: |
-          aws eks --region ${{ env.AWS_REGION }} update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }}
-
-      - name: Trigger app deployment (ensure cluster context)
-        uses: statsig-io/kubectl-via-eksctl@main
-        env:
-          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          region: us-west-2
-          cluster: stage-eks-cluster
-
-      - name: create monitoring namespace
-        run: |
-          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-      
-      - name: Add Helm repos
+          kubectl version --short
+          echo "Can create cluster roles?"
+          kubectl auth can-i create clusterrole || true
+          kubectl get ns --no-headers || true
+  
+      - name: Ensure monitoring namespace
+        run: kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+  
+      - name: Add and update Helm repos
         run: |
           helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
           helm repo add grafana https://grafana.github.io/helm-charts
           helm repo update
-
+  
+      - name: Check existing release and uninstall if broken
+        run: |
+          set -e
+          RELEASE=kube-prometheus-stack
+          NS=monitoring
+          if helm status $RELEASE -n $NS >/dev/null 2>&1; then
+            echo "Found existing release - status:"
+            helm status $RELEASE -n $NS || true
+            echo "History:"
+            helm history $RELEASE -n $NS || true
+            # If release exists but is not deployed cleanly, uninstall to allow fresh install
+            echo "Uninstalling existing release (to recover cleanly)"
+            helm uninstall $RELEASE -n $NS || true
+          else
+            echo "No existing release found"
+          fi
+  
+      - name: Pull chart and apply CRDs (safe)
+        working-directory: ${{ github.workspace }}
+        run: |
+          TMP=/tmp/kube-monitor-chart
+          rm -rf $TMP
+          mkdir -p $TMP
+          helm pull prometheus-community/kube-prometheus-stack --untar --untardir $TMP || true
+          # Chart directory name may be kube-prometheus-stack
+          CHART_DIR=$(find $TMP -maxdepth 1 -type d -name "kube-prometheus-stack*" | head -n1)
+          echo "Chart dir: $CHART_DIR"
+          if [ -d "$CHART_DIR/crds" ]; then
+            echo "Applying CRDs from chart (may be no-op if already present)"
+            kubectl apply -f "$CHART_DIR/crds" || true
+          else
+            echo "No CRDs folder in chart (helm will handle CRDs)."
+          fi
+  
       - name: Render values with env
         run: |
           envsubst < values.yml > /tmp/values.rendered.yaml
-          echo "Rendered values:"
           tail -n +1 /tmp/values.rendered.yaml
         working-directory: ./kubernetes
-
-      # ---- robust CRD apply: pull chart & apply any crds/ directories ----
-      - name: Install Prometheus CRDs (pre-install) - pull chart and apply CRDs
+  
+      - name: Install/Upgrade kube-prometheus-stack (with debug)
+        working-directory: ./kubernetes
         run: |
-          set -euo pipefail
-          echo "Pulling kube-prometheus-stack chart and applying CRDs (if present)"
-          TMPDIR="/tmp/helmcharts"
-          mkdir -p "$TMPDIR"
-          helm repo update
-          if [ -n "${CHART_VERSION:-}" ]; then
-            helm pull prometheus-community/kube-prometheus-stack --version "$CHART_VERSION" --untar --untardir "$TMPDIR"
-          else
-            helm pull prometheus-community/kube-prometheus-stack --untar --untardir "$TMPDIR"
-          fi
-          CHART_DIR=$(find "$TMPDIR" -maxdepth 1 -type d -name 'kube-prometheus-stack*' | head -n 1)
-          if [ -z "$CHART_DIR" ]; then
-            echo "No chart directory found in $TMPDIR; listing contents:"
-            ls -la "$TMPDIR"
-            exit 0
-          fi
-          CRDS_DIRS=$(find "$CHART_DIR" -type d -name crds || true)
-          if [ -z "$CRDS_DIRS" ]; then
-            echo "No crds directory found inside chart. Continuing."
-          else
-            for d in $CRDS_DIRS; do
-              echo "Applying CRDs from $d"
-              for i in 1 2 3 4 5; do
-                kubectl apply --server-side -f "$d" && break || {
-                  echo "kubectl apply failed, retrying ($i/5)..."
-                  sleep 5
-                }
-              done
-            done
-            echo "CRD apply complete."
-          fi
-
-      - name: Install/Upgrade kube-prometheus-stack
-        id: helm_install
-        run: |
-          set -euo pipefail
-          helm repo update
-          # Use --skip-crds because we applied CRDs above (or they already exist).
-          # --atomic + --cleanup-on-fail ensure rollbacks on partial failures.
-          helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-            --namespace monitoring \
+          set -o pipefail
+          RELEASE=kube-prometheus-stack
+          NS=monitoring
+          # Run helm with debug; capture output to file for artifact upload
+          helm upgrade --install $RELEASE prometheus-community/kube-prometheus-stack \
+            --namespace $NS \
             --values /tmp/values.rendered.yaml \
-            --skip-crds --atomic --cleanup-on-fail --wait --timeout 15m
-        working-directory: ./kubernetes
-
-      - name: Apply ServiceMonitor for my app
+            --wait \
+            --timeout 30m \
+            --debug 2>&1 | tee /tmp/helm-install.log
+        continue-on-error: true
+  
+      - name: Collect Kubernetes debug info (always)
+        if: always()
         run: |
-          kubectl apply -f servicemonitor-splar-system.yaml
-        working-directory: ./kubernetes
-
-      - name: Show external endpoints
-        run: |
-          echo "Waiting for Grafana deployment to be available..."
-          kubectl -n monitoring wait --for=condition=available deploy/kube-prometheus-stack-grafana --timeout=10m || true
-          kubectl -n monitoring get svc -o wide
-          echo "Grafana URL:"
-          kubectl -n monitoring get svc kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}' || true
-          echo "Prometheus URL:"
-          kubectl -n monitoring get svc kube-prometheus-stack-prometheus -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}' || true
-
-      # ---- debug diagnostics (only if job fails) ----
-      - name: Monitoring debug dump
-        if: ${{ failure() }}
-        run: |
-          set -e
-          TMP_DEBUG="/tmp/monitoring-debug"
-          rm -rf "$TMP_DEBUG"
-          mkdir -p "$TMP_DEBUG"
-          echo "=== PODS ===" > "$TMP_DEBUG/pods.txt"
-          kubectl -n monitoring get pods -o wide >> "$TMP_DEBUG/pods.txt" || true
-          echo "=== EVENTS ===" > "$TMP_DEBUG/events.txt"
-          kubectl -n monitoring get events --sort-by='.metadata.creationTimestamp' >> "$TMP_DEBUG/events.txt" || true
-          echo "=== NOT READY PODS ===" > "$TMP_DEBUG/not_ready.txt"
-          kubectl -n monitoring get pods --field-selector=status.phase!=Running -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' >> "$TMP_DEBUG/not_ready.txt" || true
-          idx=0
-          for p in $(kubectl -n monitoring get pods --field-selector=status.phase!=Running -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n'); do
-            if [ $idx -ge 5 ]; then break; fi
-            echo "---- POD: $p ----" >> "$TMP_DEBUG/pod_${idx}.txt"
-            kubectl -n monitoring describe pod $p >> "$TMP_DEBUG/pod_${idx}.txt" || true
-            kubectl -n monitoring logs $p --all-containers --tail=200 >> "$TMP_DEBUG/pod_${idx}.txt" || true
-            idx=$((idx+1))
+          mkdir -p /tmp/monitoring-debug
+          echo "--- HELM LOG ---" > /tmp/monitoring-debug/README.txt || true
+          cp /tmp/helm-install.log /tmp/monitoring-debug/ || true
+          echo "=== kubectl get ns ===" >> /tmp/monitoring-debug/README.txt
+          kubectl get ns >> /tmp/monitoring-debug/kubectl-ns.txt || true
+          echo "=== CRDs (prometheus/grafana) ===" >> /tmp/monitoring-debug/README.txt
+          kubectl get crds | grep -E 'prometheus|alertmanager|servicemonitor|grafana' || true > /tmp/monitoring-debug/crds.txt || true
+          echo "=== monitoring namespace: pods ===" >> /tmp/monitoring-debug/README.txt
+          kubectl -n monitoring get all -o wide > /tmp/monitoring-debug/monitoring-get-all.txt || true
+          echo "=== monitoring events (last 200) ===" >> /tmp/monitoring-debug/README.txt
+          kubectl -n monitoring get events --sort-by=.metadata.creationTimestamp | tail -n 200 > /tmp/monitoring-debug/events.txt || true
+          echo "=== describe pods and logs (last 200 lines) ===" >> /tmp/monitoring-debug/README.txt
+          for p in $(kubectl -n monitoring get pods -o name 2>/dev/null || true); do
+            echo ">>> $p" >> /tmp/monitoring-debug/pod-describe.txt
+            kubectl -n monitoring describe $p >> /tmp/monitoring-debug/pod-describe.txt 2>&1 || true
+            kubectl -n monitoring logs --all-containers $p --tail=200 >> /tmp/monitoring-debug/pod-logs.txt 2>&1 || true
           done
-          tar -czf /tmp/monitoring-debug.tar.gz -C /tmp monitoring-debug || true
-
-      - name: Upload monitoring debug artifacts
-        if: ${{ failure() }}
+          echo "=== kube-system pods (node/infra errors might show there) ===" >> /tmp/monitoring-debug/README.txt
+          kubectl -n kube-system get pods -o wide > /tmp/monitoring-debug/kube-system-pods.txt || true
+  
+      - name: Upload monitoring debug artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: monitoring-debug
-          path: /tmp/monitoring-debug.tar.gz
-                    
-
-
-
-
-                          
-            
+          path: /tmp/monitoring-debug
+       
+  
+  
+  
+  
+                            
+              
+  
