@@ -175,7 +175,7 @@ jobs:
         uses: aquasecurity/trivy-action@0.20.0
         with:
           scan-type: config
-          scan-ref: ./Terraform
+          scan-ref: ./terraform
           format: table
           output: trivy-terraform-report.txt
           severity: HIGH,CRITICAL
