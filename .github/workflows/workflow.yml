@@ -142,7 +142,7 @@ jobs:
         uses: aquasecurity/trivy-action@0.20.0
         with:
           scan-type: image
-          image-ref: ${{ vars.DOCKER_USERNAME }}/solar-system:${{ github.sha }}
+          image-ref: ${{ secrets.DOCKER_HUB_USERNAME  }}/solar-system:${{ github.sha }}
           format: table
           output: trivy-image-report.txt
           severity: HIGH,CRITICAL
@@ -153,7 +153,7 @@ jobs:
         uses: aquasecurity/trivy-action@0.20.0
         with:
           scan-type: image
-          image-ref: ${{ vars.DOCKER_USERNAME }}/solar-system:${{ github.sha }}
+          image-ref: ${{ secrets.DOCKER_HUB_USERNAME }}/solar-system:${{ github.sha }}
           format: cyclonedx
           output: trivy-sbom.cdx
           exit-code: 0
@@ -162,7 +162,7 @@ jobs:
         uses: aquasecurity/trivy-action@0.20.0
         with:
           scan-type: image
-          image-ref: ${{ vars.DOCKER_USERNAME }}/solar-system:${{ github.sha }}
+          image-ref: ${{ secrets.DOCKER_HUB_USERNAME }}/solar-system:${{ github.sha }}
           format: sarif
           output: trivy-results.sarif
           exit-code: 0
