@@ -126,7 +126,83 @@ jobs:
     
             echo Testing Image URL using wget
             wget -q -O - 127.0.0.1:3000/live | grep live
+trivy-scan:
+    name: Trivy Security Scan
+    needs: docker
+    runs-on: ubuntu-latest
+    permissions:        
+     contents: read
+     security-events: write  
+     actions: read
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v5
 
+      - name: Scan Docker Image
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          scan-type: image
+          image-ref: ${{ vars.DOCKER_USERNAME }}/solar-system:${{ github.sha }}
+          format: table
+          output: trivy-image-report.txt
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 0
+
+      - name: Generate SBOM (CycloneDX)
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          scan-type: image
+          image-ref: ${{ vars.DOCKER_USERNAME }}/solar-system:${{ github.sha }}
+          format: cyclonedx
+          output: trivy-sbom.cdx
+          exit-code: 0
+
+      - name: Scan Docker Image (SARIF)
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          scan-type: image
+          image-ref: ${{ vars.DOCKER_USERNAME }}/solar-system:${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: 0
+      - name: Upload SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Scan Terraform configs
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          scan-type: config
+          scan-ref: ./Terraform
+          format: table
+          output: trivy-terraform-report.txt
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 0
+
+      - name: Scan Source Code for Secrets
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          output: trivy-secrets-report.txt
+          severity: HIGH,CRITICAL
+          exit-code: 0
+
+      - name: Upload Trivy Reports
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: trivy-reports
+          path: |
+            trivy-image-report.txt
+            trivy-sbom.cdx
+            trivy-results.sarif
+            trivy-terraform-report.txt
+            trivy-secrets-report.txt
             
   terraform:
     name: Terraform Deployment
