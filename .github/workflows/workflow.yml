@@ -238,6 +238,59 @@ jobs:
       - name: Terraform Apply
         run: terraform apply -auto-approve
         working-directory: ./terraform
+  argocd-bootstrap:
+    name: ArgoCD Bootstrap
+    needs: terraform
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4.3.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+
+      - name: Update kubeconfig
+        run: aws eks --region us-west-2 update-kubeconfig --name stage-eks-cluster
+
+      - name: Install ArgoCD via Helm
+        run: |
+          kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+          helm repo add argo https://argoproj.github.io/argo-helm
+          helm repo update
+          helm upgrade --install argocd argo/argo-cd \
+            --namespace argocd \
+            --set server.service.type=LoadBalancer
+
+      - name: Wait for ArgoCD Server
+        run: |
+          kubectl rollout status deploy/argocd-server -n argocd --timeout=300s
+          kubectl get svc -n argocd      
+  deploy-argocd:
+    name: Deploy via ArgoCD
+    needs: [docker, argocd-bootstrap]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4.3.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+
+      - name: Update kubeconfig
+        run: aws eks --region us-west-2 update-kubeconfig --name stage-eks-cluster
+
+      - name: Apply ArgoCD Application (App + Monitoring)
+        run: |
+          kubectl apply -f kubernetes/app-argocd.yaml
+          kubectl apply -f kubernetes/monitoring-argocd.yaml      
 
   deploy:
     needs: terraform
