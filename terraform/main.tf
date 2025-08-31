@@ -188,7 +188,7 @@ resource "aws_eks_node_group" "stage_eks_node_group" {
 
   scaling_config {
     desired_size = var.node_desired_capacity
-    max_size     = var.node_max_capacity
+    max_size     = 20
     min_size     = var.node_min_capacity
   }
 
