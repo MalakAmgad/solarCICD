@@ -334,8 +334,9 @@ jobs:
                 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
                   --namespace monitoring \
                   --values /tmp/values.rendered.yaml \
-                  --wait --timeout 2m \
                   --no-hooks
+              # --wait --timeout 2m \
+                  
             - name: Apply ServiceMonitor for my app
               run: |
                 kubectl apply -f servicemonitor-splar-system.yaml
