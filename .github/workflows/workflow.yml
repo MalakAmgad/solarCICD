@@ -322,6 +322,10 @@ jobs:
                 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
                 helm repo add grafana https://grafana.github.io/helm-charts
                 helm repo update
+                helm repo add autoscaler https://kubernetes.github.io/autoscaler
+                helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
+                --namespace kube-system
+
             - name: Render values with env
               run: |
                envsubst < values.yml > /tmp/values.rendered.yaml
