@@ -238,23 +238,25 @@ jobs:
       - name: Terraform Apply
         run: terraform apply -auto-approve
         working-directory: ./terraform
+    # -------------------
+  # ArgoCD Bootstrap
+  # -------------------
   argocd-bootstrap:
     name: ArgoCD Bootstrap
     needs: terraform
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
-      - name: Configure AWS Credentials
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4.3.1
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-west-2
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Update kubeconfig
-        run: aws eks --region us-west-2 update-kubeconfig --name stage-eks-cluster
+        run: aws eks --region ${{ env.AWS_REGION }} update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }}
 
       - name: Install ArgoCD via Helm
         run: |
@@ -266,173 +268,125 @@ jobs:
             --set server.service.type=LoadBalancer
 
       - name: Wait for ArgoCD Server
-        run: |
-          kubectl rollout status deploy/argocd-server -n argocd --timeout=300s
-          kubectl get svc -n argocd      
+        run: kubectl rollout status deploy/argocd-server -n argocd --timeout=300s
+
+  # -------------------
+  # Deploy via ArgoCD
+  # -------------------
   deploy-argocd:
     name: Deploy via ArgoCD
     needs: [docker, argocd-bootstrap]
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
-      - name: Configure AWS Credentials
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4.3.1
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-west-2
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Update kubeconfig
-        run: aws eks --region us-west-2 update-kubeconfig --name stage-eks-cluster
+        run: aws eks --region ${{ env.AWS_REGION }} update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }}
 
-      - name: Apply ArgoCD Application (App + Monitoring)
+      - name: Apply ArgoCD Applications
         run: |
           kubectl apply -f kubernetes/app-argocd.yaml
           kubectl apply -f kubernetes/monitoring-argocd.yaml      
 
+  # -------------------
+  # Direct EKS Deployment (without ArgoCD)
+  # -------------------
   deploy:
     needs: terraform
-    name: Deploy to EkS
+    name: Deploy to EKS
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout config files
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Configure AWS Credentials
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4.3.1
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-west-2
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Update kubeconfig
-        run: |
-          aws eks --region us-west-2 update-kubeconfig --name stage-eks-cluster
+        run: aws eks --region ${{ env.AWS_REGION }} update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }}
 
-      - name: Trigger app deployment
-        uses: statsig-io/kubectl-via-eksctl@main
-        env:
-           aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-           aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-           region: us-west-2
-           cluster: stage-eks-cluster
-      - name: Deploy k8s deployments
+      - name: Deploy App
         run: |
-         kubectl apply -f deployment.yml
-         kubectl apply -f service.yml
+          kubectl apply -f deployment.yml
+          kubectl apply -f service.yml
         working-directory: ./kubernetes
+
       - name: Verify Deployment
         run: |
-          kubectl get pods  
+          kubectl get pods
           kubectl get svc
-      - name: Get LoadBalancer URL
-        run: |
-          echo "Waiting for LoadBalancer to be provisioned..."
-          kubectl wait --for=condition=available deployment/microservice-deployment --timeout=120s || true
-          kubectl get svc microservice-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-          
+
+  # -------------------
+  # Monitoring on EKS (Prometheus + Grafana + Autoscaler)
+  # -------------------
   deploy-monitoring:
-        needs: deploy
-        name: deploy Monitoring
-        runs-on: ubuntu-latest
-        env: 
-          AWS_REGION: us-west-2
-          EKS_CLUSTER_NAME: stage-eks-cluster
-          GRAFANA_ADMIN_PASSWORD: ${{ secrets.grafana_admin_password }}
+    needs: deploy
+    name: Deploy Monitoring
+    runs-on: ubuntu-latest
+    env: 
+      GRAFANA_ADMIN_PASSWORD: ${{ secrets.grafana_admin_password }}
+    steps:
+      - uses: actions/checkout@v5
 
-        steps:
-            - name: checkout config files
-              uses: actions/checkout@v5
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4.3.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
+      - name: Update kubeconfig
+        run: aws eks --region ${{ env.AWS_REGION }} update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }}
 
-            - name: Configure AWS Credentials
-              uses: aws-actions/configure-aws-credentials@v4.3.1
-              with:
-                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-                  aws-region: us-west-2
+      - name: Create Monitoring Namespace
+        run: kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 
-            - name: updat kubeconfig
-              run: | 
-                    aws eks --region us-west-2 update-kubeconfig --name stage-eks-cluster
-                    aws eks update-kubeconfig \
-                    --name stage-eks-cluster \
-                    --region us-west-2
+      - name: Add Helm repos
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo add grafana https://grafana.github.io/helm-charts
+          helm repo add autoscaler https://kubernetes.github.io/autoscaler
+          helm repo update
 
+      - name: Install Cluster Autoscaler
+        run: |
+          helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
+            --namespace kube-system \
+            --set autoDiscovery.clusterName=${{ env.EKS_CLUSTER_NAME }} \
+            --set awsRegion=${{ env.AWS_REGION }}
+          kubectl get pods -n kube-system | grep cluster-autoscaler
 
-            - name: Trigger app deployment
-              uses: statsig-io/kubectl-via-eksctl@main
-              env:
-                 aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-                 aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-                 region: us-west-2
-                 cluster: stage-eks-cluster
-            
-            - name: create monitoring namespace
-              run: kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+      - name: Render values.yml with secrets
+        run: envsubst < values.yml > /tmp/values.rendered.yaml
+        working-directory: ./kubernetes
 
-            - name: Add Helm repos
-              run: |
-                helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-                helm repo add grafana https://grafana.github.io/helm-charts
-                helm repo add autoscaler https://kubernetes.github.io/autoscaler
-                helm repo update
-                
-                helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
-                  --namespace kube-system \
-                  --set autoDiscovery.clusterName=stage-eks-cluster \
-                  --set autoDiscovery.enabled=true \
-                  --set awsRegion=us-west-2
-                kubectl get pods -n kube-system | grep cluster-autoscaler
-                kubectl logs -n kube-system $(kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-cluster-autoscaler -o jsonpath='{.items[0].metadata.name}')
+      - name: Install kube-prometheus-stack
+        run: |
+          helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+            --namespace monitoring \
+            --values /tmp/values.rendered.yaml \
+            --wait --timeout 5m
 
-  
+      - name: Apply ServiceMonitor for app
+        run: kubectl apply -f servicemonitor-solar-system.yaml
+        working-directory: ./kubernetes
 
-            - name: Render values with env
-              run: |
-               envsubst < values.yml > /tmp/values.rendered.yaml
-               echo "Rendered values:"
-               tail -n +1 /tmp/values.rendered.yaml
-              working-directory: ./kubernetes
-
-            - name: Install/Upgrade kube-prometheus-stack
-              run: |
-                helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-                  --namespace monitoring \
-                  --values /tmp/values.rendered.yaml 
-            #      --wait --timeout 2m 
-            - name: Debug monitoring namespace
-              if: failure()
-              run: |
-                echo "==== Pods ===="
-                kubectl get pods -n monitoring
-                echo "==== Events ===="
-                kubectl get events -n monitoring --sort-by=.lastTimestamp | tail -n 30
-                echo "==== CRDs ===="
-                kubectl get crd | grep monitoring.coreos.com
-                kubectl get pods -A | grep grafana
-                kubectl get pods -A | grep prometheus
-
-      
-                  
-            - name: Apply ServiceMonitor for my app
-              run: |
-                kubectl apply -f servicemonitor-solar-system.yaml
-              working-directory: ./kubernetes
-
-          #  - name: Show external endpoints
-          #    run: |
-          #      kubectl -n monitoring wait --for=condition=available deploy/kube-prometheus-stack-grafana  --timeout=10m
-          #      kubectl -n monitoring get svc -o wide
-          #      echo "Grafana URL:"
-          #      kubectl -n monitoring get svc kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}'
-          #      echo "Prometheus URL:"
-          #      kubectl -n monitoring get svc kube-prometheus-stack-prometheus -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}'
-
-                    
+      - name: Show Monitoring Endpoints
+        run: |
+          echo "Grafana:"
+          kubectl -n monitoring get svc kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}'
+          echo "Prometheus:"
+          kubectl -n monitoring get svc kube-prometheus-stack-prometheus -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}'       
        
   
   
