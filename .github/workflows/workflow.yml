@@ -240,6 +240,39 @@ jobs:
       - name: Terraform Apply
         run: terraform apply -auto-approve
         working-directory: ./terraform
+  # ----------------- ANSIBLE CONFIG -----------------
+  ansible:
+    name: Ansible Deployment
+    needs: terraform
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Setup Ansible
+        run: sudo apt-get update && sudo apt-get install -y ansible
+
+      - name: Run Ansible Playbook
+        run: ansible-playbook -i ansible/inventory ansible/playbook.yml
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+
+  # ----------------- JENKINS TRIGGER -----------------
+  jenkins:
+    name: Trigger Jenkins Job
+    needs: ansible
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Jenkins Pipeline
+        uses: appleboy/jenkins-action@v0.0.5
+        with:
+          url: ${{ secrets.JENKINS_URL }}
+          user: ${{ secrets.JENKINS_USER }}
+          token: ${{ secrets.JENKINS_TOKEN }}
+          job: "solar-system-pipeline"
+          parameters: |
+            IMAGE_TAG=${{ github.sha }}
+            ENV=production      
     # -------------------
   # ArgoCD Bootstrap
   # -------------------
