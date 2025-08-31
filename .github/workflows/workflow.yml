@@ -313,7 +313,12 @@ jobs:
                  aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
                  region: us-west-2
                  cluster: stage-eks-cluster
-
+            - name: Apply Prometheus Operator CRDs
+              run: |
+                kubectl apply --server-side -f https://github.com/prometheus-operator/prometheus-operator/raw/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
+                kubectl apply --server-side -f https://github.com/prometheus-operator/prometheus-operator/raw/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheuses.yaml
+                kubectl apply --server-side -f https://github.com/prometheus-operator/prometheus-operator/raw/main/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml
+                kubectl apply --server-side -f https://github.com/prometheus-operator/prometheus-operator/raw/main/example/prometheus-operator-crd/monitoring.coreos.com_alertmanagers.yaml
             - name: create monitoring namespace
               run: kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 

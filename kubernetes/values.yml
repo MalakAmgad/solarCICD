@@ -6,7 +6,7 @@ grafana:
   enabled: false
 prometheus:
  prometheusSpec:
-  ServiceMonitorSelectorNiUsesHelmValues: false
+  serviceMonitorSelectorNilUsesHelmValues: false
  service:
   type: LoadBalancer
 
