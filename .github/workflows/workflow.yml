@@ -334,8 +334,7 @@ jobs:
                   --set autoDiscovery.enabled=true \
                   --set awsRegion=us-west-2
                 kubectl get pods -n kube-system | grep cluster-autoscaler
-                kubectl logs -n kube-system $(kubectl get pods -n kube-system \ 
-                    -l app.kubernetes.io/name=aws-cluster-autoscaler -o jsonpath='{.items[0].metadata.name}')
+                kubectl logs -n kube-system $(kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-cluster-autoscaler -o jsonpath='{.items[0].metadata.name}')
 
   
 
