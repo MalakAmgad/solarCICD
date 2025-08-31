@@ -321,10 +321,14 @@ jobs:
               run: |
                 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
                 helm repo add grafana https://grafana.github.io/helm-charts
-                helm repo update
                 helm repo add autoscaler https://kubernetes.github.io/autoscaler
+                helm repo update
+                
                 helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
-                --namespace kube-system
+                  --namespace kube-system \
+                  --set autoDiscovery.clusterName=stage-eks-cluster \
+                  --set autoDiscovery.enabled=true \
+                  --set autoDiscovery.awsRegion=us-west-2
 
             - name: Render values with env
               run: |
