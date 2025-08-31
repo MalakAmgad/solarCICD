@@ -305,6 +305,10 @@ jobs:
             - name: updat kubeconfig
               run: | 
                     aws eks --region us-west-2 update-kubeconfig --name stage-eks-cluster
+                    aws eks update-kubeconfig \
+                    --name stage-eks-cluster \
+                    --region us-west-2
+
 
             - name: Trigger app deployment
               uses: statsig-io/kubectl-via-eksctl@main
