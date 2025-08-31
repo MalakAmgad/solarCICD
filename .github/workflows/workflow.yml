@@ -344,8 +344,7 @@ jobs:
 
             - name: Show external endpoints
               run: |
-                echo "Waiting for LoadBalancer IPs..."
-                kubectl -n monitoring wait --for=condition=available deploy/kube-prometheus-stack-grafana --timeout=10m
+                kubectl -n monitoring wait --for=condition=available deploy/kube-prometheus-stack-grafana 
                 kubectl -n monitoring get svc -o wide
                 echo "Grafana URL:"
                 kubectl -n monitoring get svc kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}'
