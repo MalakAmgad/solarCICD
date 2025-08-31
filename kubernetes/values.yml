@@ -1,22 +1,40 @@
 grafana:
- adminPassword: "${secrets.grafana_admin_password}"
- service:
-  type: LoadBalancer
- persistence:
-  enabled: false
+  adminPassword: "${secrets.grafana_admin_password}"
+  service:
+    type: LoadBalancer
+  persistence:
+    enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 100Mi
+    limits:
+      cpu: 200m
+      memory: 200Mi
+
 prometheus:
- prometheusSpec:
-  serviceMonitorSelectorNilUsesHelmValues: false
- service:
-  type: LoadBalancer
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 200Mi
+      limits:
+        cpu: 300m
+        memory: 300Mi
+  service:
+    type: LoadBalancer
 
 alertmanager:
- enabled: false
+  enabled: false
 
 prometheusOperator:
- resources:
-  requests:
-   cpu: 100m
-   memory: 200Mi
- admissionWebhooks:
-  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 100Mi
+    limits:
+      cpu: 200m
+      memory: 200Mi
+  admissionWebhooks:
+    enabled: true
