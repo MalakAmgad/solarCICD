@@ -339,7 +339,7 @@ jobs:
                   
             - name: Apply ServiceMonitor for my app
               run: |
-                kubectl apply -f servicemonitor-splar-system.yaml
+                kubectl apply -f servicemonitor-solar-system.yml
               working-directory: ./kubernetes
 
             - name: Show external endpoints
