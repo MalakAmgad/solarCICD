@@ -6,22 +6,22 @@ grafana:
     enabled: false
   resources:
     requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
       cpu: 50m
       memory: 64Mi
-    limits:
-      cpu: 100m
-      memory: 128Mi
 
 prometheus:
   prometheusSpec:
     serviceMonitorSelectorNilUsesHelmValues: false
     resources:
       requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
         cpu: 50m
         memory: 128Mi
-      limits:
-        cpu: 100m
-        memory: 256Mi
   service:
     type: LoadBalancer
 
@@ -35,6 +35,6 @@ prometheusOperator:
       memory: 100Mi
     limits:
       cpu: 100m
-      memory: 200Mi
+      memory: 128Mi
   admissionWebhooks:
     enabled: true

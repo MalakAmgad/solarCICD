@@ -329,6 +329,9 @@ jobs:
                   --set autoDiscovery.clusterName=stage-eks-cluster \
                   --set autoDiscovery.enabled=true \
                   --set autoDiscovery.awsRegion=us-west-2
+                kubectl get pods -n kube-system | grep cluster-autoscaler
+                kubectl logs -n kube-system -l app.kubernetes.io/name=aws-cluster-autoscaler
+  
 
             - name: Render values with env
               run: |
