@@ -338,7 +338,7 @@ jobs:
                 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
                   --namespace monitoring \
                   --values /tmp/values.rendered.yaml \
-                  --wait --timeout 10m 
+                  --wait --timeout 2m 
             - name: Debug monitoring namespace
               if: failure()
               run: |
