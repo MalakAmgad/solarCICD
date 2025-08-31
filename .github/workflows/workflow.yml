@@ -349,8 +349,8 @@ jobs:
               run: |
                 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
                   --namespace monitoring \
-                  --values /tmp/values.rendered.yaml \
-                  --wait --timeout 2m 
+                  --values /tmp/values.rendered.yaml 
+            #      --wait --timeout 2m 
             - name: Debug monitoring namespace
               if: failure()
               run: |
@@ -370,14 +370,14 @@ jobs:
                 kubectl apply -f servicemonitor-solar-system.yaml
               working-directory: ./kubernetes
 
-            - name: Show external endpoints
-              run: |
-                kubectl -n monitoring wait --for=condition=available deploy/kube-prometheus-stack-grafana  --timeout=10m
-                kubectl -n monitoring get svc -o wide
-                echo "Grafana URL:"
-                kubectl -n monitoring get svc kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}'
-                echo "Prometheus URL:"
-                kubectl -n monitoring get svc kube-prometheus-stack-prometheus -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}'
+          #  - name: Show external endpoints
+          #    run: |
+          #      kubectl -n monitoring wait --for=condition=available deploy/kube-prometheus-stack-grafana  --timeout=10m
+          #      kubectl -n monitoring get svc -o wide
+          #      echo "Grafana URL:"
+          #      kubectl -n monitoring get svc kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}'
+          #      echo "Prometheus URL:"
+          #      kubectl -n monitoring get svc kube-prometheus-stack-prometheus -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}{.status.loadBalancer.ingress[0].ip}{"\n"}'
 
                     
        
