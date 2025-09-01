@@ -51,7 +51,7 @@ cd solar-system
 npm install
 npm test
 ```
-
+create s3, iam credentials, dynamodb first in aws
 Run locally with Docker:
 
 ```bash
